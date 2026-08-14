@@ -1,0 +1,87 @@
+# Publishes the pre-built static site (index.html + bundle.js + phaser.min.js + photon.min.js +
+# assets/) to GitHub Pages via the "GitHub Actions" source. The build itself happens UPSTREAM — the
+# game repo's deploy.js produces the minified output and pushes the ready-made files into this repo;
+# this workflow only stages them (dropping VCS/IDE cruft) and deploys.
+#
+# FREE on public repos: GitHub Actions minutes are unlimited for public repositories and Pages hosting
+# is free — this costs nothing.
+#
+# NOTE: for this workflow to actually publish, set Settings → Pages → Source = "GitHub Actions"
+# (not "Deploy from a branch"). With the branch source, GitHub's built-in pages-build-deployment runs
+# instead and this file is ignored.
+name: Deploy Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      retry:
+        description: 'Auto-retry attempt number (0 = original run; the retry job bumps it)'
+        default: '0'
+
+# Least-privilege token: read the repo, write the Pages deployment, mint the OIDC token deploy-pages needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time. cancel-in-progress: false lets an in-flight publish FINISH rather than
+# killing it mid-way — cancelling a half-done Pages deploy is exactly what tends to wedge the queue.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Stage site (exclude VCS/IDE files)
+        run: |
+          mkdir -p _site
+          rsync -a \
+            --exclude='.git' --exclude='.github' --exclude='.idea' \
+            --exclude='.claude' --exclude='_site' \
+            ./ _site/
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+  # The Pages backend intermittently rejects a fresh deployment with "Deployment failed, try again
+  # later." (empty error, content fine) — a purely TRANSIENT fault that a FRESH run clears (this is
+  # why a manual empty commit "fixes" it). Re-running the SAME run doesn't help and re-uploads the
+  # github-pages artifact → the "Multiple artifacts named github-pages" red herring. So on failure we
+  # auto-dispatch a brand-new run (new run_id → attempt 1 → single artifact), bounded to 3 tries so a
+  # GENUINELY broken deploy stops instead of looping. workflow_dispatch via GITHUB_TOKEN is exempt
+  # from GitHub's recursion guard, so this self-trigger actually starts a new run.
+  retry:
+    needs: deploy
+    if: failure() && fromJSON(github.event.inputs.retry || '0') < 3
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Re-dispatch a fresh Pages run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          n='${{ github.event.inputs.retry || 0 }}'
+          next=$((n + 1))
+          echo "::warning::Pages deploy failed (transient backend). Re-dispatching fresh run, attempt #$next of 3."
+          sleep 45
+          gh workflow run pages.yml -R "${{ github.repository }}" --ref main -f retry="$next"
