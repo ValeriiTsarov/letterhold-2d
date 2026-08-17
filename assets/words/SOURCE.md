@@ -36,29 +36,61 @@ Derived from the **hunspell** distribution of [brown-uk/dict_uk](https://github.
 > without re-reading its license.
 
 - Upstream: `https://github.com/brown-uk/dict_uk/releases/download/v6.8.0/hunspell-uk_UA_6.8.0.zip`
-  (`uk_UA.dic`, 352 081 entries)
-- Here: the STEM column only (drop the `/flags` suffix), lowercase Ukrainian letters only, **length 2..9**
-  → 85 179 words, 1.3 MB
+  (`uk_UA.dic`, 352 081 stems + `uk_UA.aff`, 5 782 suffix rules)
+- Here: **every inflected form the affix rules generate**, lowercase Ukrainian letters only, **length 2..9**
+  → 800 950 words, 13.5 MB (2.2 MB over gzip)
 
-Regenerate (node):
+Base forms alone made the game close to unplayable: the list held `КІТ` but not `КОТА`, `ЧИТАТИ` but not
+`ЧИТАЮ`, so a 7-tile hand averaged 19.8 legal words against English's 45.6. Expanding the affixes takes it
+to 41.0 — parity — which is why the Ukrainian hand is 7 tiles like everyone else's.
+
+The `.aff` is unusually easy to expand: it has **only `SFX` blocks**, single-character flags, no `PFX`, no
+continuation flags, no `NEEDAFFIX`/`CIRCUMFIX`/compounding. So the whole expander is:
 
 ```js
-// node mkuk.mjs uk_UA.dic assets/words/uk.txt
+// node mkuk.mjs uk_UA.aff uk_UA.dic assets/words/uk.txt
 import { readFileSync, writeFileSync } from 'node:fs';
 const OK = /^[а-щьюяєіїґ]{2,9}$/; // no apostrophes, hyphens, proper nouns or Latin
-const w = new Set();
-for (const line of readFileSync(process.argv[2], 'utf8').split('\n').slice(1)) {
-  const stem = line.split('/')[0].trim();
-  if (OK.test(stem)) w.add(stem.toUpperCase());
+const rules = new Map(); // flag -> [{strip, add, re}]
+for (const line of readFileSync(process.argv[2], 'utf8').split(/\r?\n/)) {
+  if (!line.startsWith('SFX ')) continue;
+  const [, flag, strip, add, cond] = line.split(/\s+/);
+  if (strip === 'Y' || strip === 'N') continue; // block header, not a rule
+  if (!rules.has(flag)) rules.set(flag, []);
+  rules.get(flag).push({
+    strip: strip === '0' ? '' : strip,
+    add: add === '0' ? '' : add,
+    re: !cond || cond === '.' ? null : new RegExp(cond + '$'),
+  });
 }
-writeFileSync(process.argv[3], [...w].sort().join('\n') + '\n', 'utf8');
+const w = new Set();
+const keep = (s) => { if (OK.test(s)) w.add(s.toUpperCase()); };
+for (const line of readFileSync(process.argv[3], 'utf8').split(/\r?\n/).slice(1)) {
+  const s = line.trim();
+  const slash = s.indexOf('/');
+  const stem = (slash < 0 ? s : s.slice(0, slash)).trim();
+  if (!stem) continue;
+  keep(stem); // no NEEDAFFIX in this .aff, so every stem is itself a word
+  for (const flag of slash < 0 ? '' : s.slice(slash + 1).trim()) {
+    for (const r of rules.get(flag) ?? []) {
+      if (r.re && !r.re.test(stem)) continue;
+      if (r.strip && !stem.endsWith(r.strip)) continue;
+      keep(stem.slice(0, stem.length - r.strip.length) + r.add);
+    }
+  }
+}
+writeFileSync(process.argv[4], [...w].sort().join('\n') + '\n', 'utf8');
 ```
 
-Two ceilings worth knowing:
+Three things this file's consumers rely on — **keep them true if you regenerate it**:
 
-- **Base forms only.** A hunspell stem is the dictionary form, so this list holds `КІТ` but not `КОТА`,
-  `ЧИТАТИ` but not `ЧИТАЮ`. That matches the usual Ukrainian house rule (називний однини / інфінітив).
-  Expanding every inflection means running the affix rules in `uk_UA.aff` and would blow the asset past
-  tens of MB — do it only if playtesting says the base-form rule is too tight.
+- **Sorted, and sorted by `.sort()`'s order.** `src/words.ts` bisects this text in place instead of building
+  a Set (800k strings costs ~137 MB of heap), so the file must be sorted by UTF-16 code unit — which for
+  Cyrillic is *not* the alphabet: Є, І, Ї sort before А and Ґ after Я. `tests/board.test.ts` samples the
+  file and fails if a line it contains can't be found.
+- **The tile set is derived from this file**, not from feel: `SETS.uk` in `src/board.ts` is its letter
+  frequency allocated over 100 tiles, and the point values are that frequency banded backwards. A new word
+  list means recomputing both.
 - **No apostrophes.** `М'ЯСО` can't be spelled with tiles at all, so those words are filtered out rather
-  than left in to be permanently unplayable.
+  than left in to be permanently unplayable. Same for `Ґ`-words in practice: `Ґ` has no tile (0.04% of all
+  letters), so its 0.27% of the list needs a wildcard.
