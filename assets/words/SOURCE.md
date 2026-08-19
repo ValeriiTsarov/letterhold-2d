@@ -3,6 +3,9 @@
 One plain-text file per language, `<lang>.txt`, UPPERCASE, one word per line. `src/words.ts` loads the
 one the current locale asks for — a new language is a new file here, not a code change.
 
+`uk-spell.txt` sits beside it: `<board spelling> <true spelling>`, one pair per line, only for the words
+where the two differ (`МЯТА М'ЯТА`). Ukrainian only, and only the explain popup reads it.
+
 ## en.txt
 
 ENABLE (Enhanced North American Benchmark Lexicon), **public domain** — released by Alan Beale / Mendel
@@ -36,61 +39,53 @@ Derived from the **hunspell** distribution of [brown-uk/dict_uk](https://github.
 > without re-reading its license.
 
 - Upstream: `https://github.com/brown-uk/dict_uk/releases/download/v6.8.0/hunspell-uk_UA_6.8.0.zip`
-  (`uk_UA.dic`, 352 081 stems + `uk_UA.aff`, 5 782 suffix rules)
-- Here: **every inflected form the affix rules generate**, lowercase Ukrainian letters only, **length 2..9**
-  → 800 950 words, 13.5 MB (2.2 MB over gzip)
+  (`uk_UA.dic`, 352 081 stems + `uk_UA.aff`, 5 692 suffix rules)
+- Here: the affix expansion under the three rules below → **118 653 words, 1.83 MB**, plus
+  `uk-spell.txt` (5 428 lines, the words the tiles spell differently)
 
-Base forms alone made the game close to unplayable: the list held `КІТ` but not `КОТА`, `ЧИТАТИ` but not
-`ЧИТАЮ`, so a 7-tile hand averaged 19.8 legal words against English's 45.6. Expanding the affixes takes it
-to 41.0 — parity — which is why the Ukrainian hand is 7 tiles like everyone else's.
-
-The `.aff` is unusually easy to expand: it has **only `SFX` blocks**, single-character flags, no `PFX`, no
-continuation flags, no `NEEDAFFIX`/`CIRCUMFIX`/compounding. So the whole expander is:
-
-```js
-// node mkuk.mjs uk_UA.aff uk_UA.dic assets/words/uk.txt
-import { readFileSync, writeFileSync } from 'node:fs';
-const OK = /^[а-щьюяєіїґ]{2,9}$/; // no apostrophes, hyphens, proper nouns or Latin
-const rules = new Map(); // flag -> [{strip, add, re}]
-for (const line of readFileSync(process.argv[2], 'utf8').split(/\r?\n/)) {
-  if (!line.startsWith('SFX ')) continue;
-  const [, flag, strip, add, cond] = line.split(/\s+/);
-  if (strip === 'Y' || strip === 'N') continue; // block header, not a rule
-  if (!rules.has(flag)) rules.set(flag, []);
-  rules.get(flag).push({
-    strip: strip === '0' ? '' : strip,
-    add: add === '0' ? '' : add,
-    re: !cond || cond === '.' ? null : new RegExp(cond + '$'),
-  });
-}
-const w = new Set();
-const keep = (s) => { if (OK.test(s)) w.add(s.toUpperCase()); };
-for (const line of readFileSync(process.argv[3], 'utf8').split(/\r?\n/).slice(1)) {
-  const s = line.trim();
-  const slash = s.indexOf('/');
-  const stem = (slash < 0 ? s : s.slice(0, slash)).trim();
-  if (!stem) continue;
-  keep(stem); // no NEEDAFFIX in this .aff, so every stem is itself a word
-  for (const flag of slash < 0 ? '' : s.slice(slash + 1).trim()) {
-    for (const r of rules.get(flag) ?? []) {
-      if (r.re && !r.re.test(stem)) continue;
-      if (r.strip && !stem.endsWith(r.strip)) continue;
-      keep(stem.slice(0, stem.length - r.strip.length) + r.add);
-    }
-  }
-}
-writeFileSync(process.argv[4], [...w].sort().join('\n') + '\n', 'utf8');
+```powershell
+node tools/mkuk.mjs <path>\uk_UA.aff <path>\uk_UA.dic   # writes both files and prints the tile tables
+node tools/mkdefs.mjs --refold uk                       # re-keys the gloss shards onto the new list
 ```
+
+### The three rules
+
+1. **Dictionary form only, every part of speech** — `КІТ` and `КОТИ` but never `КОТА`/`КОТІВ`/`КОТАМИ`,
+   `ЧИТАТИ` but not `ЧИТАЮ`, `ГАРНИЙ` but not `ГАРНОГО`. One sentence a player can hold in their head, and
+   the rule Ukrainian word games actually play by. It costs: a 7-tile hand falls from 34.5 playable words
+   to 26.0 (English is 48.7), which is why the Ukrainian rack is 8 tiles and not 7. What it buys, besides the rule itself, is glosses — the Wiktionary shards key
+   on lemmas, so cutting the list to lemmas takes explanation coverage from 6.4% to 10.0%.
+2. **Folded to what the tiles can spell**: `Ґ→Г`, `Ї→І`, apostrophe dropped. `М'ЯТА` is `МЯТА` on the
+   board, `ҐРУНТ` is `ГРУНТ`, `ЇЖАК` is `ІЖАК`. This *added* 12 800 apostrophe words that used to be
+   filtered out as unplayable and freed the two tiles those letters were squatting on; the true spelling
+   of every folded word is in `uk-spell.txt`, and the explain popup shows that one.
+3. **Length 2..9**, lowercase Ukrainian letters only (no hyphens, no Latin, no digits).
+
+hunspell carries no part of speech, so "is this a noun, and is this its nominative?" is read off the affix
+PARADIGM — the flag tables in `tools/mkuk.mjs` were classified from one representative expansion per flag.
+It is not perfect: ~363 oblique forms that dict_uk files as their own flagless lemmas (`ЛЮДЬМИ`, `ОЧЕЙ`)
+survive the cut, 0.3% of the list. Comparatives filed as their own lemmas (`ГАРНІШИЙ`) survive too, and
+should: they are dictionary headwords.
+
+`npm run sim` is the measurement that decides all of this — legal words an average 7-tile hand can spell
+standalone. The bare `uk_UA.dic` stems gave 19.8, the full affix expansion 42.8, the nominative-noun
+compromise 34.5, and these rules 26.0 against English's 48.7. That gap is the price of the one-rule
+lexicon, and it is paid back at the RACK, not here: Ukrainian deals **8 tiles**, which reads 44.0 — English's
+seven, near enough (`SETS.uk.rack` in `src/board.ts`; 9 tiles reads 67.0 and is not a game). The tile counts
+were the other candidate and are not the answer — re-derived against this list they measure *worse* (25.2),
+because a lemma list still over-counts `И`, so `SETS.uk`'s tables stay as they are.
 
 Three things this file's consumers rely on — **keep them true if you regenerate it**:
 
 - **Sorted, and sorted by `.sort()`'s order.** `src/words.ts` bisects this text in place instead of building
-  a Set (800k strings costs ~137 MB of heap), so the file must be sorted by UTF-16 code unit — which for
-  Cyrillic is *not* the alphabet: Є, І, Ї sort before А and Ґ after Я. `tests/board.test.ts` samples the
-  file and fails if a line it contains can't be found.
-- **The tile set is derived from this file**, not from feel: `SETS.uk` in `src/board.ts` is its letter
-  frequency allocated over 100 tiles, and the point values are that frequency banded backwards. A new word
-  list means recomputing both.
-- **No apostrophes.** `М'ЯСО` can't be spelled with tiles at all, so those words are filtered out rather
-  than left in to be permanently unplayable. Same for `Ґ`-words in practice: `Ґ` has no tile (0.04% of all
-  letters), so its 0.27% of the list needs a wildcard.
+  a Set (which costs several times the heap the raw text does), so the file must be sorted by UTF-16 code unit — which for
+  Cyrillic is *not* the alphabet: Є and І sort before А. `tests/board.test.ts` samples the file and fails if
+  a line it contains can't be found.
+- **Every letter in it has a tile.** `SETS.uk` in `src/board.ts` came from the letter frequency of the full
+  inflected list, allocated over 100 tiles, with the values that frequency banded backwards; it was *kept*
+  when the list narrowed, because re-deriving it there measures worse (25.2 words per hand against 26.0) —
+  a frequency table over whole words wants ten `И` tiles and starves `К` and `М`. `tools/mkuk.mjs`
+  prints the fresh derivation as a cross-check. What the test enforces is the tile-per-letter rule, not the
+  arithmetic.
+- **`uk-spell.txt` folds back onto it.** Every key is a word in `uk.txt`, and every value folds to its key —
+  otherwise the popup tells the player a word is written a way the board could never have accepted.
