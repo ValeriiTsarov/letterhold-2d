@@ -16,7 +16,7 @@ lemma→form mapping taken from the same hunspell pair `assets/words/uk.txt` was
 
 - Upstream: `https://dumps.wikimedia.org/ukwiktionary/latest/ukwiktionary-latest-pages-articles.xml.bz2`
   (16 MB → 187 MB of XML, 73 184 pages) + `hunspell-uk_UA_6.8.0.zip` (see `words/SOURCE.md`)
-- Here: **372 shards, 12 143 forms, 1.47 MB on disk** — the fattest is `БА.json` at 64 KB
+- Here: **347 shards, 5 593 forms, 0.71 MB on disk** — the fattest is `КА.json` at 31 KB
 
 ### Hand-written: `tools/defs-manual-uk.json`
 
@@ -33,7 +33,7 @@ true spelling from `words/uk-spell.txt` beside the gloss. Words that only exist 
 have no gloss yet: they were filtered out of the old word list, so the dump was never read for them. A full
 run against a fresh dump picks them up; `--refold` cannot invent them.
 
-**Coverage is 10.0% of `uk.txt`, and that is the ceiling of the source, not of the extractor**: only 15 439
+**Coverage is 11.9% of `uk.txt`, and that is the ceiling of the source, not of the extractor**: only 15 439
 Ukrainian lemmas in the whole dump have a usable sense (41 695 pages carry a `{{=uk=}}` block, but most are
 phrases, proper nouns or grammar-only stubs). It was 6.4% while `uk.txt` still held every inflected form —
 cutting the list to dictionary forms threw away words the dump never had a lemma for. Skewed the right way,

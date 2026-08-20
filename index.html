@@ -9,7 +9,11 @@
   @font-face { font-family: 'PT Serif'; font-style: normal; font-weight: 400; font-display: block; src: url(./assets/fonts/ptserif-regular.woff2) format('woff2'); }
   @font-face { font-family: 'PT Serif'; font-style: normal; font-weight: 700; font-display: block; src: url(./assets/fonts/ptserif-bold.woff2) format('woff2'); }
   html, body { margin: 0; padding: 0; background: #1e2244; overflow: hidden; }
-  #game { width: 100vw; height: 100vh; }
+  /* 100dvh, not 100vh: on mobile 100vh is the URL-bar-HIDDEN height, so the canvas is taller than what
+     you can actually see and the bottom row (стійка з фішками) sits under the address bar, unreachable
+     — body is overflow:hidden, so you cannot scroll to it. dvh tracks the VISIBLE viewport and fires a
+     resize as the bar shows/hides, which Scale.FIT re-fits to. 100vh stays as the fallback for old UAs. */
+  #game { width: 100vw; height: 100vh; height: 100dvh; }
   canvas { display: block; }
 </style>
 </head>
