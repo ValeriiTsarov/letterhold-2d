@@ -99,6 +99,47 @@ frequency table over whole words over-counts `И` and starves `К` and `М`. `SE
 What the rule does not catch: plural-only nouns (`ЩІ`, `АЗИ`) whose `.dic` form is the plural, since the
 paradigm cannot tell them from a noun that has a singular somewhere else. There are a few dozen.
 
+## pl.txt
+
+The **sjp.pl "słownik do gier"** — the free word list Polish word games are actually played by, and the
+base the tournament OSPS is built on.
+
+> **License: GPL 2 / LGPL 2.1 / MPL 1.1 / CC BY 4.0** (the download is multi-licensed; CC BY 4.0 is the
+> one to use — attribution only, commercial use fine). Keep this section with `pl.txt`. **OSPS** itself is
+> a copyrighted work of the Federacja Polskich Towarzystw Scrabble: don't use the name in the UI, and
+> don't swap the source for it.
+>
+> Attribution shown in-game: `LANG_INFO.pl.dict = 'SJP (słownik do gier)'`, `https://sjp.pl`.
+
+- Upstream: `https://sjp.pl/slownik/growy/` → `sjp-<date>.zip` → `slowa.txt` (3 240 471 forms, 2026-08-20)
+- Here: uppercased, Polish letters only, **length 2..8** → **449 475 words, 3.75 MB**
+
+```powershell
+node tools/mkpl.mjs <path>\slowa.txt   # writes pl.txt and prints the tile tables
+```
+
+Unlike `uk.txt` there is no lemma reconstruction and no spelling fold: every inflected form counts in
+Polish, every Polish letter has a tile, so the three `en.txt` filters are the whole pipeline.
+
+### Why the ceiling is 8 here and 9 in English
+
+Polish inflection makes the tail enormous: at 2..9 this list is 761 476 words and **6.94 MB** — 7× `en.txt`,
+a blocking load at boot (`game.ts:3417`), and ~13 MB of heap once it is a UTF-16 string. The ninth letter
+alone is 312 001 of those words and 3.2 MB of that.
+
+| max length | words | size |
+|---|---|---|
+| 7 | 233 534 | 1.76 MB |
+| 8 (shipped) | 449 475 | 3.75 MB |
+| 9 | 761 476 | 6.94 MB |
+
+**`npm run sim` cannot decide this and it is worth knowing why:** it measures what a hand spells
+*standalone*, and 7 tiles cap out at 7 letters, so all three rows above print the identical
+`mean 48.4 / tiles/turn 5.32`. Nine-letter words only ever appear in through-plays across two letters
+already on the board, which the sim does not model. So this is a size decision taken knowingly, not a
+measured one. Raise it back to 9 if long through-plays turn out to matter in playtesting — one number in
+`tools/mkpl.mjs`.
+
 Three things this file's consumers rely on — **keep them true if you regenerate it**:
 
 - **Sorted, and sorted by `.sort()`'s order.** `src/words.ts` bisects this text in place instead of building
