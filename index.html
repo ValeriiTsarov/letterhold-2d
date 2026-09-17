@@ -5,6 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
 <title>Letterhold</title>
 <link rel="icon" href="./favicon.ico" />
+<link rel="preload" href="./assets/fonts/ptserif-regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="./assets/fonts/ptserif-bold.woff2" as="font" type="font/woff2" crossorigin>
+<script>(function(){
+  function show(t){
+    var d = document.getElementById('bootErr');
+    if (!d) { d = document.createElement('div'); d.id = 'bootErr';
+      d.style.cssText = 'position:fixed;inset:0;z-index:99999;padding:12px;overflow:auto;background:#160c0c;color:#ff8a7a;font:12px/1.45 monospace;white-space:pre-wrap;word-break:break-word';
+      (document.body || document.documentElement).appendChild(d); }
+    d.textContent += t + '\n\n';
+  }
+  addEventListener('error', function(e){
+    // A failed RESOURCE (no .message) only matters during boot — the on-demand Ably SDK may 404 later.
+    if (!e.message) {
+      if (document.querySelector('canvas')) return;
+      show('load failed: ' + (e.target && (e.target.src || e.target.href)));
+      return;
+    }
+    show(e.message + '\n' + ((e.error && e.error.stack) || (e.filename + ':' + e.lineno)));
+  }, true);
+  addEventListener('unhandledrejection', function(e){ if (document.querySelector('canvas')) return; show('unhandled rejection: ' + ((e.reason && (e.reason.stack || e.reason.message)) || e.reason)); });
+  setTimeout(function(){
+    if (document.querySelector('canvas')) return;
+    show('BOOT STALLED: no canvas after 8s\nstep: ' + (window.__boot || '(bundle never ran)') +
+         '\nphaser: ' + (typeof window.Phaser) + '  cgsdk: ' + (typeof window.CrazyGames) +
+         '\nua: ' + navigator.userAgent);
+  }, 8000);
+})();</script>
 <style>
   @font-face { font-family: 'PT Serif'; font-style: normal; font-weight: 400; font-display: block; src: url(./assets/fonts/ptserif-regular.woff2) format('woff2'); }
   @font-face { font-family: 'PT Serif'; font-style: normal; font-weight: 700; font-display: block; src: url(./assets/fonts/ptserif-bold.woff2) format('woff2'); }
@@ -14,14 +41,29 @@
      — body is overflow:hidden, so you cannot scroll to it. dvh tracks the VISIBLE viewport and fires a
      resize as the bar shows/hides, which Scale.FIT re-fits to. 100vh stays as the fallback for old UAs. */
   #game { width: 100vw; height: 100vh; height: 100dvh; }
+  /* Shown until the canvas is up — game.ts removes it right after new Phaser.Game. */
+  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+             color: #b8bde0; font: 32px system-ui, sans-serif; z-index: 0; }
   canvas { display: block; }
 </style>
 </head>
 <body>
+<div id="loading">Loading…</div>
 <div id="game"></div>
 <script defer src="./GameAnalytics.min.js"></script>
 <script src="./phaser.min.js"></script>
-<script type="module" src="./bundle.js"></script>
+<script>(function(){
+  var K='sc.boxreload';
+  function go(){var s=document.createElement('script');s.type='module';s.src='./bundle.js';document.body.appendChild(s);}
+  try{if(sessionStorage.getItem(K))return go();}catch(e){return go();}
+  var t0=Date.now(),last='';
+  (function tick(){
+    var p=(screen.height>screen.width||innerHeight>innerWidth)?'p':'l';
+    var sig=p+' '+innerWidth+'x'+innerHeight;
+    if(sig===last||Date.now()-t0>400){try{sessionStorage.setItem(K,p);}catch(e){}return go();}
+    last=sig;setTimeout(tick,100);
+  })();
+})();</script>
 
 </body>
 </html>
